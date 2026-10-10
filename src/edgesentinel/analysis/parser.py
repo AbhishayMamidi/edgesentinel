@@ -41,8 +41,16 @@ def _parse_ipv4(data: bytes, src_mac: str, dst_mac: str, capture_source: str, fr
         return None
 
     ver_ihl = data[0]
+    version = (ver_ihl >> 4) & 0x0F
+    if version != 4:
+        return None
+
     ihl = (ver_ihl & 0x0F) * 4
     if ihl < 20 or len(data) < ihl:
+        return None
+
+    total_len = struct.unpack("!H", data[2:4])[0]
+    if total_len < ihl:
         return None
 
     # Check IPv4 Fragmentation: flags (3 bits) + fragment offset (13 bits)
@@ -72,6 +80,9 @@ def _parse_ipv4(data: bytes, src_mac: str, dst_mac: str, capture_source: str, fr
 
     # TCP
     if protocol_num == 6 and len(transport_data) >= 20:
+        data_offset = (transport_data[12] >> 4) * 4
+        if data_offset < 20 or len(transport_data) < data_offset:
+            return None
         src_port, dst_port, seq, ack, offset_flags = struct.unpack("!HHIIH", transport_data[:14])
         flags_val = offset_flags & 0x01FF
 
@@ -101,6 +112,8 @@ def _parse_ipv4(data: bytes, src_mac: str, dst_mac: str, capture_source: str, fr
     # UDP
     elif protocol_num == 17 and len(transport_data) >= 8:
         src_port, dst_port, udp_len = struct.unpack("!HHH", transport_data[:6])
+        if udp_len < 8:
+            return None
         udp_payload = transport_data[8:]
         dns_query = None
         dns_qtype = None

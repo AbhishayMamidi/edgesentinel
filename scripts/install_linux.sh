@@ -32,7 +32,7 @@ apt-get install -y --no-install-recommends \
 
 # 2. Grant tcpdump capture permissions to unprivileged processes
 echo "[2/7] Configuring network capture capabilities..."
-setcap cap_net_raw,cap_net_admin=eip $(which tcpdump) || true
+setcap cap_net_raw=eip $(which tcpdump) || true
 
 # 3. Create dedicated system user
 echo "[3/7] Creating service user '${APP_USER}'..."

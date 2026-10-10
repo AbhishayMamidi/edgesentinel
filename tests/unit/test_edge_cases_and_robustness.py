@@ -199,3 +199,60 @@ def test_alert_deduplication_sliding_window():
     ]
     alerts_later = [ps_det.process_event(e) for e in events_later if ps_det.process_event(e)]
     assert len(alerts_later) == 1
+
+
+def test_parser_protocol_bounds_and_invalid_fields():
+    """Verify that illegal protocol field combinations are safely rejected."""
+    eth_hdr = b"\x00\x11\x22\x33\x44\x55\xaa\xbb\xcc\xdd\xee\xff\x08\x00"
+
+    # 1. Non-IPv4 version (e.g. IPv6 0x60 on IPv4 ethertype)
+    bad_ver = b"\x65\x00\x00\x28\x12\x34\x00\x00\x40\x06\x00\x00\x0a\x00\x00\x01\x0a\x00\x00\x02" + (b"\x00" * 20)
+    assert parse_ethernet_frame(eth_hdr + bad_ver) is None
+
+    # 2. total_len < ihl (total_len = 10, ihl = 20)
+    bad_total_len = b"\x45\x00\x00\x0a\x12\x34\x00\x00\x40\x06\x00\x00\x0a\x00\x00\x01\x0a\x00\x00\x02" + (b"\x00" * 20)
+    assert parse_ethernet_frame(eth_hdr + bad_total_len) is None
+
+    # 3. TCP with invalid data offset (< 20 bytes, e.g. offset = 3 -> 12 bytes)
+    ip_hdr = b"\x45\x00\x00\x28\x12\x34\x00\x00\x40\x06\x00\x00\x0a\x00\x00\x01\x0a\x00\x00\x02"
+    bad_tcp_offset = struct.pack("!HHIIH", 1234, 80, 100, 200, 0x3002) + (b"\x00" * 10)
+    assert parse_ethernet_frame(eth_hdr + ip_hdr + bad_tcp_offset) is None
+
+    # 4. UDP with udp_len < 8 bytes (e.g. udp_len = 4)
+    ip_hdr_udp = b"\x45\x00\x00\x20\x12\x34\x00\x00\x40\x11\x00\x00\x0a\x00\x00\x01\x0a\x00\x00\x02"
+    bad_udp_len = struct.pack("!HHH", 5353, 5353, 4) + (b"\x00" * 10)
+    assert parse_ethernet_frame(eth_hdr + ip_hdr_udp + bad_udp_len) is None
+
+
+def test_database_rollback_and_repeated_init():
+    """Verify that failed transactions roll back cleanly and repeated init is idempotent."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "rollback_test.db")
+        db = Database(db_path=db_path)
+
+        # 1. Repeated init is idempotent
+        db._init_db()
+        stats = db.get_stats()
+        assert stats["total_events"] == 0
+
+        # 2. Insert valid event
+        ev = NetworkEvent(src_ip="192.168.1.10", dst_ip="192.168.1.1", protocol="TCP", packet_len=60)
+        db.insert_event(ev)
+        assert db.get_stats()["total_events"] == 1
+
+        # 3. Failed transaction triggers rollback
+        try:
+            with db.get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO events (id, timestamp, src_ip, dst_ip, protocol, packet_len, is_synthetic, capture_source) "
+                    "VALUES ('fail-1', 1000.0, '1.1.1.1', '2.2.2.2', 'TCP', 50, 0, 'test')"
+                )
+                # Intentionally trigger error
+                raise RuntimeError("Simulated mid-transaction failure")
+        except RuntimeError:
+            pass
+
+        # Total events must remain 1 (fail-1 rolled back)
+        assert db.get_stats()["total_events"] == 1
+        db.close()
+

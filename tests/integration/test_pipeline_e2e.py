@@ -124,3 +124,12 @@ def test_dashboard_api_with_persisted_data():
         resp_dev = client.get("/api/devices")
         assert resp_dev.status_code == 200
         assert len(resp_dev.json()) >= 1
+
+        # 7. Error handling: non-existent alert lookup returns 404
+        resp_404 = client.get("/api/alerts/nonexistent-alert-id")
+        assert resp_404.status_code == 404
+
+        # 8. Error handling: invalid simulation scenario returns 400
+        resp_bad_sim = client.post("/api/simulate/invalid-scenario-name")
+        assert resp_bad_sim.status_code == 400
+

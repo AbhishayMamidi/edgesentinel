@@ -45,6 +45,12 @@ class Database:
             conn.execute("PRAGMA foreign_keys = ON;")
             yield conn
             conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
 
