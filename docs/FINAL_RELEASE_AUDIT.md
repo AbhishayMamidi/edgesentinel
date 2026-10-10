@@ -99,17 +99,17 @@ Artifacts in `dist/` were built and verified:
 
 ```text
 edgesentinel/dist/
-├── edgesentinel-0.1.0-py3-none-any.whl       (54,111 bytes)
-├── edgesentinel-0.1.0-rc1.tar.gz             (452,055 bytes)
-├── edgesentinel-0.1.0-rc1.zip                (90,825 bytes)
+├── edgesentinel-0.1.0-py3-none-any.whl       (54,229 bytes)
+├── edgesentinel-0.1.0-rc1.tar.gz             (481,687 bytes)
+├── edgesentinel-0.1.0-rc1.zip                (104,885 bytes)
 └── SHA256SUMS.txt
 ```
 
 ### Verified SHA-256 Hashes
 ```text
-d7a511d39850d5d66130b16ea66e99e09cec60d02a9db367f80f78a2dda52d58  edgesentinel-0.1.0-py3-none-any.whl
-652904a7a8142e07b37ef10b74ccce99494d93591231e0d7ac491a2d9f186dd3  edgesentinel-0.1.0-rc1.tar.gz
-892ed5326251a8d169eed10723e115410399033df0cf37a33271851bec26d0a8  edgesentinel-0.1.0-rc1.zip
+6baa08863b7262068f50430da382bea206a6761573c3081212fcf197881bb347  edgesentinel-0.1.0-py3-none-any.whl
+30d190db7f6514c904ea0ca9df00f903ef3af25988b74b1ac9b25a3a732025d3  edgesentinel-0.1.0-rc1.tar.gz
+0e5b15c0468365cd7af9784e03df04fa7e57648ca49162f5ff42f9ce9a1f5c25  edgesentinel-0.1.0-rc1.zip
 ```
 
 ---
