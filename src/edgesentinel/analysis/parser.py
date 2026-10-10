@@ -42,8 +42,26 @@ def _parse_ipv4(data: bytes, src_mac: str, dst_mac: str, capture_source: str, fr
 
     ver_ihl = data[0]
     ihl = (ver_ihl & 0x0F) * 4
-    if len(data) < ihl:
+    if ihl < 20 or len(data) < ihl:
         return None
+
+    # Check IPv4 Fragmentation: flags (3 bits) + fragment offset (13 bits)
+    flags_frag = struct.unpack("!H", data[6:8])[0]
+    fragment_offset = (flags_frag & 0x1FFF) * 8
+
+    # Non-initial fragments do not start with transport headers
+    if fragment_offset != 0:
+        src_ip_bytes = data[12:16]
+        dst_ip_bytes = data[16:20]
+        return NetworkEvent(
+            src_ip=socket.inet_ntoa(src_ip_bytes),
+            dst_ip=socket.inet_ntoa(dst_ip_bytes),
+            protocol="IP-FRAG",
+            packet_len=frame_len,
+            capture_source=capture_source,
+            is_synthetic=False,
+            metadata={"fragment_offset": fragment_offset}
+        )
 
     protocol_num = data[9]
     src_ip_bytes = data[12:16]
@@ -168,7 +186,8 @@ def _parse_simple_dns(data: bytes) -> Tuple[Optional[str], Optional[str]]:
 
         idx = 12
         labels = []
-        while idx < len(data):
+        label_count = 0
+        while idx < len(data) and label_count < 64:
             length = data[idx]
             if length == 0:
                 idx += 1
@@ -177,11 +196,13 @@ def _parse_simple_dns(data: bytes) -> Tuple[Optional[str], Optional[str]]:
             if (length & 0xC0) == 0xC0:
                 idx += 2
                 break
-            idx += 1
-            if idx + length > len(data):
+            # RFC 1035: Label length cannot exceed 63 octets
+            if length > 63 or idx + 1 + length > len(data):
                 break
+            idx += 1
             labels.append(data[idx:idx + length].decode("ascii", errors="replace"))
             idx += length
+            label_count += 1
 
         query_name = ".".join(labels) if labels else None
         qtype_str = None

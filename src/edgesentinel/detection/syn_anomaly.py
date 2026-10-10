@@ -45,9 +45,13 @@ class SynAnomalyDetector(BaseDetector):
 
         cutoff = now - self.window_seconds
         self._syn_history[src_ip] = [t for t in self._syn_history[src_ip] if t >= cutoff]
+        if not self._syn_history[src_ip]:
+            del self._syn_history[src_ip]
+            return None
 
         count = len(self._syn_history[src_ip])
-        duration = max(now - self._syn_history[src_ip][0], 0.1)
+        earliest = min(self._syn_history[src_ip])
+        duration = max(now - earliest, 0.1)
         rate = count / duration if duration < self.window_seconds else count / self.window_seconds
 
         if count >= 5 and rate >= self.threshold_syn_rate:

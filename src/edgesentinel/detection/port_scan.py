@@ -33,8 +33,8 @@ class PortScanDetector(BaseDetector):
         if not event.src_ip or not event.dst_ip or not event.dst_port:
             return None
 
-        # Filter out established traffic, prioritize SYN/UDP probe packets
-        if event.protocol == "TCP" and event.tcp_flags and "SYN" not in event.tcp_flags:
+        # Filter out established bidirectional data traffic (ACK without SYN), allowing SYN, FIN, NULL, or UDP probes
+        if event.protocol == "TCP" and event.tcp_flags and "ACK" in event.tcp_flags and "SYN" not in event.tcp_flags:
             return None
 
         now = event.timestamp or time.time()
@@ -46,6 +46,9 @@ class PortScanDetector(BaseDetector):
         # Evict probes outside window
         cutoff = now - self.window_seconds
         self._history[pair] = [p for p in self._history[pair] if p[0] >= cutoff]
+        if not self._history[pair]:
+            del self._history[pair]
+            return None
 
         distinct_ports: Set[int] = {p[1] for p in self._history[pair]}
 

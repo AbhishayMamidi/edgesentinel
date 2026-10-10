@@ -44,7 +44,7 @@ class EventPipeline:
         self.inventory = DeviceInventory(
             trusted_devices=config.inventory.trusted_devices
         )
-        self.alert_manager = AlertManager(db=db)
+        self.alert_manager = AlertManager(db=db, auto_flush=False)
         self.monitor = ResourceMonitor(data_dir=str(self.db.db_path.parent))
 
         # Detectors
@@ -94,7 +94,8 @@ class EventPipeline:
 
         # Batch write staging
         self._pending_events: List[NetworkEvent] = []
-        self._pending_flows: List[FlowRecord] = []
+        self._pending_flows: dict[str, FlowRecord] = {}
+        self._pending_devices: dict[str, Device] = {}
         self._last_flush_time = time.time()
         self.total_processed = 0
         self.total_alerts = 0
@@ -106,12 +107,12 @@ class EventPipeline:
         # 1. Update flow tracker
         flow = self.flow_tracker.process_event(event)
         if flow:
-            self._pending_flows.append(flow)
+            self._pending_flows[flow.flow_id] = flow
 
         # 2. Update device inventory
         device, is_new = self.inventory.observe_event(event)
         if device:
-            self.db.upsert_device(device)
+            self._pending_devices[device.ip] = device
             if is_new:
                 new_dev_alert = self.new_device_detector.process_new_device(
                     device, is_synthetic=event.is_synthetic
@@ -152,20 +153,25 @@ class EventPipeline:
         return alerts
 
     def flush(self) -> None:
-        """Commit staged events and flows to database."""
+        """Commit staged events, flows, and devices to database."""
         if self._pending_events:
             self.db.insert_events_batch(self._pending_events)
             self._pending_events.clear()
 
         # Check for expired flows
         expired = self.flow_tracker.expire_stale_flows()
-        if expired:
-            self._pending_flows.extend(expired)
+        for f in expired:
+            self._pending_flows[f.flow_id] = f
 
         if self._pending_flows:
-            self.db.upsert_flows_batch(self._pending_flows)
+            self.db.upsert_flows_batch(list(self._pending_flows.values()))
             self._pending_flows.clear()
 
+        if self._pending_devices:
+            self.db.upsert_devices_batch(list(self._pending_devices.values()))
+            self._pending_devices.clear()
+
+        self.alert_manager.flush()
         self._last_flush_time = time.time()
 
     def get_metrics(self) -> SystemMetrics:

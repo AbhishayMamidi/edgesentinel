@@ -81,11 +81,32 @@ def test_ssh_bruteforce_detector():
     low = gen.generate_ssh_bruteforce(attempts=2)
     assert len(collect_alerts(detector, low)) == 0
 
-    high = gen.generate_ssh_bruteforce(attempts=8)
-    alerts = collect_alerts(detector, high)
-    assert len(alerts) == 1
-    assert alerts[0].detector_id == "DET-SSH-BRUTE"
-    assert alerts[0].evidence["attempt_count"] >= 5
+    # Case A: Repeated auth failure logs -> Severity.HIGH
+    high_auth = gen.generate_ssh_bruteforce(attempts=8)
+    alerts_auth = collect_alerts(detector, high_auth)
+    assert len(alerts_auth) == 1
+    assert alerts_auth[0].detector_id == "DET-SSH-BRUTE"
+    assert alerts_auth[0].severity == Severity.HIGH
+    assert "Authentication Failures" in alerts_auth[0].title
+    assert alerts_auth[0].evidence["verified_auth_failure_logs"] is True
+
+    # Case B: Connection attempts only without auth logs -> Severity.MEDIUM
+    detector.reset()
+    now = time.time()
+    conn_only = [
+        NetworkEvent(
+            timestamp=now + (i * 0.1),
+            src_ip="192.168.1.111", dst_ip="192.168.1.20",
+            src_port=40000 + i, dst_port=22, protocol="TCP", tcp_flags="SYN",
+            metadata={}  # No auth_failure flag
+        )
+        for i in range(8)
+    ]
+    alerts_conn = collect_alerts(detector, conn_only)
+    assert len(alerts_conn) == 1
+    assert alerts_conn[0].detector_id == "DET-SSH-BRUTE"
+    assert alerts_conn[0].severity == Severity.MEDIUM
+    assert "Connection Rate" in alerts_conn[0].title
 
 
 def test_dns_anomaly_detector_long_query_and_rate():

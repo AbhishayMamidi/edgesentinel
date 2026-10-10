@@ -57,8 +57,11 @@ class Database:
     def close(self) -> None:
         """Close any lingering handles and checkpoint WAL."""
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            conn = sqlite3.connect(str(self.db_path))
+            try:
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            finally:
+                conn.close()
         except Exception:
             pass
 
@@ -176,6 +179,39 @@ class Database:
         with self.get_connection() as conn:
             conn.execute(query, params)
 
+    def insert_alerts_batch(self, alerts: List[Alert]) -> None:
+        if not alerts:
+            return
+        query = """
+            INSERT INTO alerts (
+                id, timestamp, detector_id, severity, src_ip, dst_ip,
+                title, description, evidence, threshold_details,
+                confidence, recommendations, is_synthetic, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        rows = [
+            (
+                a.id,
+                a.timestamp,
+                a.detector_id,
+                a.severity.value,
+                a.src_ip,
+                a.dst_ip,
+                a.title,
+                a.description,
+                json.dumps(a.evidence),
+                a.threshold_details,
+                a.confidence,
+                json.dumps(a.recommendations),
+                1 if a.is_synthetic else 0,
+                a.status.value
+            )
+            for a in alerts
+        ]
+        with self.get_connection() as conn:
+            conn.executemany(query, rows)
+
+
     def get_alerts(
         self,
         limit: int = 100,
@@ -260,6 +296,11 @@ class Database:
     # --- Device Inventory Methods ---
 
     def upsert_device(self, device: Device) -> None:
+        self.upsert_devices_batch([device])
+
+    def upsert_devices_batch(self, devices: List[Device]) -> None:
+        if not devices:
+            return
         query = """
             INSERT INTO devices (
                 ip, mac, hostname, first_seen, last_seen, observation_source, is_trusted, packet_count
@@ -270,18 +311,21 @@ class Database:
                 hostname = COALESCE(excluded.hostname, devices.hostname),
                 packet_count = devices.packet_count + excluded.packet_count
         """
-        params = (
-            device.ip,
-            device.mac,
-            device.hostname,
-            device.first_seen,
-            device.last_seen,
-            device.observation_source,
-            1 if device.is_trusted else 0,
-            device.packet_count
-        )
+        rows = [
+            (
+                d.ip,
+                d.mac,
+                d.hostname,
+                d.first_seen,
+                d.last_seen,
+                d.observation_source,
+                1 if d.is_trusted else 0,
+                d.packet_count
+            )
+            for d in devices
+        ]
         with self.get_connection() as conn:
-            conn.execute(query, params)
+            conn.executemany(query, rows)
 
     def get_devices(self) -> List[Device]:
         query = "SELECT * FROM devices ORDER BY last_seen DESC"
@@ -314,8 +358,8 @@ class Database:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(flow_id) DO UPDATE SET
                 last_seen = excluded.last_seen,
-                packet_count = flows.packet_count + excluded.packet_count,
-                byte_count = flows.byte_count + excluded.byte_count,
+                packet_count = excluded.packet_count,
+                byte_count = excluded.byte_count,
                 tcp_flags_seen = excluded.tcp_flags_seen,
                 state = excluded.state
         """

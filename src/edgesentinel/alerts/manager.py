@@ -15,17 +15,28 @@ logger = logging.getLogger("edgesentinel.alerts")
 class AlertManager:
     """Manages alert lifecycle, deduplication, SQLite persistence, and dispatch."""
 
-    def __init__(self, db: Database, max_recent: int = 500, dedup_window_seconds: float = 30.0):
+    def __init__(self, db: Database, max_recent: int = 500, dedup_window_seconds: float = 30.0, auto_flush: bool = True):
         self.db = db
         self.max_recent = max_recent
         self.dedup_window_seconds = dedup_window_seconds
+        self.auto_flush = auto_flush
         self._recent_alerts: List[Alert] = []
         self._last_alert_seen: Dict[str, float] = {}
         self._subscribers: List[Callable[[Alert], None]] = []
+        self._pending_alerts: List[Alert] = []
 
     def subscribe(self, callback: Callable[[Alert], None]) -> None:
         """Register a subscriber callback for real-time alert dispatch."""
         self._subscribers.append(callback)
+
+    def flush(self) -> None:
+        """Persist staged alerts to database."""
+        if self._pending_alerts:
+            try:
+                self.db.insert_alerts_batch(self._pending_alerts)
+            except Exception as e:
+                logger.error("Failed to store alerts batch in database: %s", e)
+            self._pending_alerts.clear()
 
     def dispatch(self, alert: Alert) -> bool:
         """
@@ -48,15 +59,19 @@ class AlertManager:
             self._last_alert_seen = {k: v for k, v in self._last_alert_seen.items() if v >= cutoff}
 
         # Persist to database
-        try:
-            self.db.insert_alert(alert)
-        except Exception as e:
-            logger.error("Failed to store alert in database: %s", e)
+        if self.auto_flush:
+            try:
+                self.db.insert_alert(alert)
+            except Exception as e:
+                logger.error("Failed to store alert in database: %s", e)
+        else:
+            self._pending_alerts.append(alert)
 
         # In-memory bounded cache
         self._recent_alerts.insert(0, alert)
         if len(self._recent_alerts) > self.max_recent:
             self._recent_alerts.pop()
+
 
         logger.warning(
             "[%s] [%s] %s - %s",

@@ -58,25 +58,39 @@ class SshBruteforceDetector(BaseDetector):
             if self.should_suppress_duplicate(dedup_key, window_seconds=self.window_seconds, current_time=now):
                 return None
 
+            if has_auth_fail:
+                title = "Repeated SSH Authentication Failures (Suspected Brute-Force)"
+                severity = Severity.HIGH
+                confidence = 0.95
+                desc = (
+                    f"Host {src_ip} produced {attempts} failed authentication events against SSH on {dst_ip} "
+                    f"within {self.window_seconds:.1f}s, crossing the threshold of {self.threshold_attempts}."
+                )
+            else:
+                title = "Elevated SSH Connection Rate (Potential Service Probing)"
+                severity = Severity.MEDIUM
+                confidence = 0.70
+                desc = (
+                    f"Host {src_ip} made {attempts} connection attempts to SSH port 22 on {dst_ip} "
+                    f"within {self.window_seconds:.1f}s. Note: network connection rate alone does not confirm failed authentication."
+                )
+
             return Alert(
                 detector_id=self.detector_id,
-                severity=Severity.HIGH,
+                severity=severity,
                 src_ip=src_ip,
                 dst_ip=dst_ip,
-                title="Repeated SSH Connection Attempts (Brute-Force Indicator)",
-                description=(
-                    f"Host {src_ip} made {attempts} connection attempts to SSH service on {dst_ip} "
-                    f"within {self.window_seconds:.1f}s, crossing the threshold of {self.threshold_attempts} attempts."
-                ),
+                title=title,
+                description=desc,
                 evidence={
                     "attempt_count": attempts,
                     "target_service": "SSH (port 22)",
                     "window_seconds": self.window_seconds,
                     "threshold": self.threshold_attempts,
-                    "has_auth_failure_metadata": has_auth_fail
+                    "verified_auth_failure_logs": has_auth_fail
                 },
-                threshold_details=f">= {self.threshold_attempts} SSH attempts in {self.window_seconds}s",
-                confidence=0.85,
+                threshold_details=f">= {self.threshold_attempts} SSH attempts/failures in {self.window_seconds}s",
+                confidence=confidence,
                 recommendations=[
                     f"Check auth logs on target host {dst_ip} for repeated failed logins.",
                     f"Consider rate-limiting or blocking repeated connections from {src_ip}.",

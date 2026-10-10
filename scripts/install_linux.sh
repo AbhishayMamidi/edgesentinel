@@ -63,8 +63,11 @@ if [[ ! -f "${CONFIG_DIR}/config.yaml" ]]; then
 fi
 
 # Permissions
-chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}" "${DATA_DIR}" "${LOG_DIR}"
+chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}" "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}"
 chmod 750 "${CONFIG_DIR}" "${DATA_DIR}"
+if [[ -f "${CONFIG_DIR}/config.yaml" ]]; then
+    chmod 640 "${CONFIG_DIR}/config.yaml"
+fi
 
 # 7. Install and start systemd service
 echo "[7/7] Registering systemd service..."

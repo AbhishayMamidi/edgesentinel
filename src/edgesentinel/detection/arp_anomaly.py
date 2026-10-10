@@ -35,7 +35,9 @@ class ArpAnomalyDetector(BaseDetector):
         mac = event.arp_sha.upper().strip()
         now = event.timestamp or time.time()
 
-        # Ignore broadcast/zero MAC
+        # Ignore broadcast, DHCP probe (0.0.0.0), or invalid MACs
+        if ip in {"0.0.0.0", "255.255.255.255"}:
+            return None
         if mac in {"00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"}:
             return None
 

@@ -25,6 +25,14 @@ class DeviceInventory:
         if not src_ip or src_ip in {"0.0.0.0", "255.255.255.255"}:
             return None, False
 
+        # Ignore multicast IPv4 addresses (224.0.0.0 - 239.255.255.255)
+        try:
+            first_octet = int(src_ip.split(".")[0])
+            if 224 <= first_octet <= 239:
+                return None, False
+        except Exception:
+            pass
+
         now = event.timestamp or time.time()
         is_new = False
         mac = event.arp_sha if event.protocol == "ARP" else None
