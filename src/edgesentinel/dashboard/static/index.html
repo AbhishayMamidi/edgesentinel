@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EdgeSentinel | Local Network Security Monitoring</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --success: #238636;
+      --warning: #d29922;
+      --danger: #f85149;
+      --critical: #da3633;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon {
+      background: #1f6feb;
+      color: #fff;
+      font-weight: bold;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+    }
+    .brand h1 { font-size: 1.4rem; color: var(--text-bright); }
+    .status-badge {
+      background: #23863622;
+      color: #3fb950;
+      border: 1px solid #238636;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .card-val {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      font-family: var(--font-mono);
+    }
+    .card-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+    
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 8px 16px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    .tab-btn.active {
+      background: #21262d;
+      color: var(--text-bright);
+    }
+    
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #161b22;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+    }
+    tr:hover td { background: #21262d; }
+    
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+    .badge-CRITICAL { background: #da363333; color: var(--critical); border: 1px solid var(--critical); }
+    .badge-HIGH { background: #f8514933; color: var(--danger); border: 1px solid var(--danger); }
+    .badge-MEDIUM { background: #d2992233; color: var(--warning); border: 1px solid var(--warning); }
+    .badge-LOW { background: #58a6ff33; color: var(--accent); border: 1px solid var(--accent); }
+    .badge-INFO { background: #23863633; color: #3fb950; border: 1px solid var(--success); }
+    .badge-sim {
+      background: #d2992222;
+      color: #e3b341;
+      border: 1px dashed #d29922;
+      font-size: 0.7rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    
+    .btn {
+      background: #21262d;
+      color: var(--text-bright);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .btn:hover { background: #30363d; }
+    .btn-primary { background: #238636; border-color: #2ea043; }
+    .btn-primary:hover { background: #2ea043; }
+    
+    .sim-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+      background: #161b22;
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 8px;
+    }
+    .sim-title { width: 100%; font-size: 0.9rem; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+    
+    .mono { font-family: var(--font-mono); }
+    .empty-state { text-align: center; padding: 40px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-icon">ES</div>
+      <div>
+        <h1>EdgeSentinel</h1>
+        <div style="font-size: 0.8rem; color: var(--text-muted);">Local Network Security & IDS (Laptop-First → Pi 3B+)</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span class="status-badge" id="host-mode">● PASSIVE MONITORING</span>
+      <button class="btn" onclick="fetchData()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <!-- Metric Overview Cards -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Recorded Alerts</div>
+      <div class="card-val" id="val-alerts">0</div>
+      <div class="card-sub" id="sub-alerts">0 High / Critical</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Observed Devices</div>
+      <div class="card-val" id="val-devices">0</div>
+      <div class="card-sub" id="sub-devices">0 Trusted</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Events Ingested</div>
+      <div class="card-val" id="val-events">0</div>
+      <div class="card-sub" id="sub-events">DB: 0 KB</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Process Memory / 1GB Budget</div>
+      <div class="card-val" id="val-mem">0 MB</div>
+      <div class="card-sub" id="sub-mem">Target: < 350 MB</div>
+    </div>
+  </div>
+
+  <!-- Simulation Trigger Panel -->
+  <div class="sim-panel">
+    <div class="sim-title">⚡ Synthetic Simulation Suite (Laptop Development)</div>
+    <button class="btn" onclick="triggerSim('port-scan')">Probe: Port Scan</button>
+    <button class="btn" onclick="triggerSim('syn-flood')">Burst: SYN Flood</button>
+    <button class="btn" onclick="triggerSim('ssh-failures')">Auth: SSH Failures</button>
+    <button class="btn" onclick="triggerSim('dns-burst')">Exfil: DNS Burst/Long</button>
+    <button class="btn" onclick="triggerSim('arp-conflict')">Spoof: ARP Conflict</button>
+    <button class="btn" onclick="triggerSim('traffic-spike')">Surge: Traffic Spike</button>
+    <button class="btn" onclick="triggerSim('new-device')">Discovery: New Device</button>
+    <button class="btn" onclick="triggerSim('normal-traffic')">Baseline: Normal Traffic</button>
+    <span id="sim-feedback" style="align-self: center; font-size: 0.85rem; color: #58a6ff; margin-left: 10px;"></span>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('alerts', this)">Security Alerts</button>
+    <button class="tab-btn" onclick="switchTab('devices', this)">Device Inventory</button>
+    <button class="tab-btn" onclick="switchTab('events', this)">Network Events</button>
+    <button class="tab-btn" onclick="switchTab('system', this)">Platform & Health</button>
+  </div>
+
+  <!-- Alerts View -->
+  <div id="tab-alerts" class="view">
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Severity</th>
+            <th>Detector</th>
+            <th>Source -> Target</th>
+            <th>Title & Description</th>
+            <th>Status</th>
+            <th>Origin</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-alerts">
+          <tr><td colspan="8" class="empty-state">Loading alerts...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Devices View -->
+  <div id="tab-devices" class="view" style="display: none;">
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>MAC Address</th>
+            <th>Trusted Status</th>
+            <th>Packet Count</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+            <th>Capture Source</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-devices">
+          <tr><td colspan="7" class="empty-state">No devices observed yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Events View -->
+  <div id="tab-events" class="view" style="display: none;">
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Proto</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Flags</th>
+            <th>Length</th>
+            <th>Extra Info</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-events">
+          <tr><td colspan="8" class="empty-state">No events recorded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- System Health View -->
+  <div id="tab-system" class="view" style="display: none;">
+    <div class="card" style="margin-bottom: 16px;">
+      <h3 style="color: var(--text-bright); margin-bottom: 12px;">Host System & Platform Runtime</h3>
+      <pre id="system-details" style="font-family: var(--font-mono); font-size: 0.85rem; color: #8b949e; background: #0d1117; padding: 16px; border-radius: 6px; overflow-x: auto;"></pre>
+    </div>
+  </div>
+
+  <script>
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+      btn.classList.add('active');
+      document.getElementById('tab-' + name).style.display = 'block';
+    }
+
+    async function fetchData() {
+      try {
+        const [resStatus, resAlerts, resDevices, resEvents] = await Promise.all([
+          fetch('/api/status').then(r => r.json()),
+          fetch('/api/alerts?limit=50').then(r => r.json()),
+          fetch('/api/devices').then(r => r.json()),
+          fetch('/api/events?limit=50').then(r => r.json())
+        ]);
+
+        // Metrics
+        document.getElementById('val-alerts').textContent = resStatus.stats.total_alerts || 0;
+        const highCount = (resStatus.stats.alerts_by_severity?.HIGH || 0) + (resStatus.stats.alerts_by_severity?.CRITICAL || 0);
+        document.getElementById('sub-alerts').textContent = `${highCount} High/Critical`;
+
+        document.getElementById('val-devices').textContent = resStatus.stats.total_devices || 0;
+        const trustedCount = resDevices.filter(d => d.is_trusted).length;
+        document.getElementById('sub-devices').textContent = `${trustedCount} Trusted`;
+
+        document.getElementById('val-events').textContent = resStatus.stats.total_events || 0;
+        document.getElementById('sub-events').textContent = `DB: ${resStatus.stats.db_size_kb || 0} KB`;
+
+        const memUsed = resStatus.metrics.memory_used_mb || 0;
+        document.getElementById('val-mem').textContent = `${memUsed} MB`;
+        document.getElementById('sub-mem').textContent = `Host RAM: ${resStatus.platform.available_ram_mb} MB free`;
+
+        document.getElementById('system-details').textContent = JSON.stringify({
+          platform: resStatus.platform,
+          database: resStatus.stats,
+          resource_metrics: resStatus.metrics,
+          config: resStatus.config
+        }, null, 2);
+
+        // Alerts Table
+        const tbodyAlerts = document.getElementById('tbody-alerts');
+        if (resAlerts.length === 0) {
+          tbodyAlerts.innerHTML = '<tr><td colspan="8" class="empty-state">No security alerts recorded. Network clear.</td></tr>';
+        } else {
+          tbodyAlerts.innerHTML = resAlerts.map(a => {
+            const date = new Date(a.timestamp * 1000).toISOString().replace('T', ' ').substring(0, 19);
+            const simBadge = a.is_synthetic ? '<span class="badge-sim">SIMULATED</span>' : '<span class="badge" style="background:#23863633;color:#3fb950">OBSERVED</span>';
+            const actionBtn = a.status === 'NEW' 
+              ? `<button class="btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="acknowledgeAlert('${a.id}')">Ack</button>` 
+              : `<span style="font-size: 0.75rem; color: var(--text-muted);">${a.status}</span>`;
+            return `
+              <tr>
+                <td class="mono" style="font-size:0.8rem">${date}</td>
+                <td><span class="badge badge-${a.severity}">${a.severity}</span></td>
+                <td class="mono" style="font-size:0.8rem">${escapeHtml(a.detector_id)}</td>
+                <td class="mono" style="font-size:0.8rem">${escapeHtml(a.src_ip || '-')} &rarr; ${escapeHtml(a.dst_ip || '-')}</td>
+                <td>
+                  <strong style="color:var(--text-bright)">${escapeHtml(a.title)}</strong><br>
+                  <span style="font-size:0.8rem;color:var(--text-muted)">${escapeHtml(a.description)}</span>
+                </td>
+                <td class="mono" style="font-size:0.8rem">${a.status}</td>
+                <td>${simBadge}</td>
+                <td>${actionBtn}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        // Devices Table
+        const tbodyDevices = document.getElementById('tbody-devices');
+        if (resDevices.length === 0) {
+          tbodyDevices.innerHTML = '<tr><td colspan="7" class="empty-state">No observed devices yet.</td></tr>';
+        } else {
+          tbodyDevices.innerHTML = resDevices.map(d => {
+            const fDate = new Date(d.first_seen * 1000).toISOString().replace('T', ' ').substring(0, 19);
+            const lDate = new Date(d.last_seen * 1000).toISOString().replace('T', ' ').substring(0, 19);
+            const trustBadge = d.is_trusted ? '<span class="badge" style="background:#23863633;color:#3fb950">TRUSTED</span>' : '<span class="badge" style="background:#d2992233;color:#e3b341">UNTRUSTED</span>';
+            return `
+              <tr>
+                <td class="mono" style="font-weight:600">${escapeHtml(d.ip)}</td>
+                <td class="mono">${escapeHtml(d.mac || '-')}</td>
+                <td>${trustBadge}</td>
+                <td class="mono">${d.packet_count}</td>
+                <td class="mono" style="font-size:0.8rem">${fDate}</td>
+                <td class="mono" style="font-size:0.8rem">${lDate}</td>
+                <td class="mono" style="font-size:0.8rem">${escapeHtml(d.observation_source)}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        // Events Table
+        const tbodyEvents = document.getElementById('tbody-events');
+        if (resEvents.length === 0) {
+          tbodyEvents.innerHTML = '<tr><td colspan="8" class="empty-state">No events recorded.</td></tr>';
+        } else {
+          tbodyEvents.innerHTML = resEvents.map(e => {
+            const eDate = new Date(e.timestamp * 1000).toISOString().replace('T', ' ').substring(11, 19);
+            const simBadge = e.is_synthetic ? '<span class="badge-sim">SIMULATED</span>' : '<span style="color:#3fb950">OBSERVED</span>';
+            const extra = e.dns_query ? `DNS: ${e.dns_query}` : (e.arp_op ? `ARP ${e.arp_op}` : '-');
+            return `
+              <tr>
+                <td class="mono">${eDate}</td>
+                <td class="mono" style="font-weight:600">${e.protocol}</td>
+                <td class="mono">${escapeHtml(e.src_ip)}:${e.src_port || 0}</td>
+                <td class="mono">${escapeHtml(e.dst_ip)}:${e.dst_port || 0}</td>
+                <td class="mono">${escapeHtml(e.tcp_flags || '-')}</td>
+                <td class="mono">${e.packet_len}B</td>
+                <td class="mono" style="font-size:0.75rem">${escapeHtml(extra)}</td>
+                <td>${simBadge}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+      } catch (err) {
+        console.error("Dashboard refresh error:", err);
+      }
+    }
+
+    async function triggerSim(scenario) {
+      const fb = document.getElementById('sim-feedback');
+      fb.textContent = `Running simulation: ${scenario}...`;
+      try {
+        const res = await fetch(`/api/simulate/${scenario}`, { method: 'POST' });
+        const data = await res.json();
+        fb.textContent = `✓ Generated ${data.events_generated} events, triggered ${data.alerts_triggered} alert(s).`;
+        fetchData();
+        setTimeout(() => { fb.textContent = ''; }, 5000);
+      } catch (err) {
+        fb.textContent = `✗ Failed: ${err}`;
+      }
+    }
+
+    async function acknowledgeAlert(alertId) {
+      try {
+        await fetch(`/api/alerts/${alertId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ACKNOWLEDGED' })
+        });
+        fetchData();
+      } catch (err) {
+        console.error("Ack error:", err);
+      }
+    }
+
+    // Auto-refresh every 3 seconds
+    setInterval(fetchData, 3000);
+    window.onload = fetchData;
+  </script>
+</body>
+</html>

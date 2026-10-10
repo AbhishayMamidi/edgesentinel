@@ -1,0 +1,62 @@
+# EdgeSentinel Configuration
+# Optimized for Windows 11 local development and Raspberry Pi 3B+ (1GB RAM)
+
+environment: development
+
+storage:
+  database_path: "data/edgesentinel.db"
+  busy_timeout_ms: 5000
+  retention_days: 7
+  batch_size: 100
+  flush_interval_seconds: 1.0
+
+capture:
+  backend: "simulation"        # Options: simulation, pcap, windows, linux
+  interface: ""                # Leave blank for default or auto-detect
+  bpf_filter: ""               # BPF capture filter, e.g. "tcp or udp or arp"
+  promiscuous: false
+
+monitoring:
+  interval_seconds: 2.0
+  max_queue_size: 5000         # Bounded memory: limits queue to avoid OOM on 1GB RAM
+
+dashboard:
+  enabled: true
+  host: "127.0.0.1"            # Strictly localhost for defensive security
+  port: 8080
+
+detection:
+  port_scan:
+    enabled: true
+    threshold_ports: 15        # Distinct destination ports within window
+    window_seconds: 10.0
+  syn_anomaly:
+    enabled: true
+    threshold_syn_rate: 25.0   # SYN packets/sec from single host
+    window_seconds: 5.0
+  ssh_bruteforce:
+    enabled: true
+    threshold_attempts: 5      # Failed attempts/connections to port 22
+    window_seconds: 60.0
+  dns_anomaly:
+    enabled: true
+    query_rate_threshold: 20.0 # Queries per second
+    max_query_len: 60          # Characters in domain name
+    window_seconds: 10.0
+  arp_anomaly:
+    enabled: true
+    window_seconds: 30.0
+  traffic_anomaly:
+    enabled: true
+    threshold_multiplier: 3.0  # Spike factor over baseline rate
+    window_seconds: 15.0
+  new_device:
+    enabled: true
+
+inventory:
+  trusted_devices:
+    - "127.0.0.1"
+    - "192.168.1.1"
+
+response:
+  mode: "dry_run"              # Options: passive, dry_run (strictly non-destructive)

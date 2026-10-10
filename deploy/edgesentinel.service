@@ -1,0 +1,32 @@
+[Unit]
+Description=EdgeSentinel - Local-First Network Security Monitoring & IDS
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=edgesentinel
+Group=edgesentinel
+WorkingDirectory=/opt/edgesentinel
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/opt/edgesentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+ExecStart=/opt/edgesentinel/.venv/bin/edgesentinel dashboard --port 8080 --config /etc/edgesentinel/config.yaml
+
+Restart=always
+RestartSec=5s
+
+# 1GB RAM Target Budget Protections (Raspberry Pi 3B+)
+MemoryHigh=300M
+MemoryMax=350M
+CPUQuota=60%
+
+# Security Hardening & Principle of Least Privilege
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
