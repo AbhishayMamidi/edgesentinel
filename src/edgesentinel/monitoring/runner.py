@@ -203,7 +203,10 @@ class MonitorRunner:
             for event in self.adapter.stream_events():
                 if self._stop_event.is_set():
                     break
-                self.pipeline.ingest_event(event)
+                try:
+                    self.pipeline.ingest_event(event)
+                except Exception as ex:
+                    logger.warning("Pipeline processing error on event: %s", ex)
         except Exception as e:
             if not self._stop_event.is_set():
                 self.last_error = f"Capture loop encountered exception: {e}"

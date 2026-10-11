@@ -80,7 +80,7 @@ class Database:
         if not events:
             return
         query = """
-            INSERT INTO events (
+            INSERT OR IGNORE INTO events (
                 id, timestamp, src_ip, dst_ip, src_port, dst_port,
                 protocol, tcp_flags, packet_len, interface,
                 capture_source, dns_query, arp_op, is_synthetic, metadata
@@ -160,7 +160,7 @@ class Database:
 
     def insert_alert(self, alert: Alert) -> None:
         query = """
-            INSERT INTO alerts (
+            INSERT OR IGNORE INTO alerts (
                 id, timestamp, detector_id, severity, src_ip, dst_ip,
                 title, description, evidence, threshold_details,
                 confidence, recommendations, is_synthetic, status
@@ -189,7 +189,7 @@ class Database:
         if not alerts:
             return
         query = """
-            INSERT INTO alerts (
+            INSERT OR IGNORE INTO alerts (
                 id, timestamp, detector_id, severity, src_ip, dst_ip,
                 title, description, evidence, threshold_details,
                 confidence, recommendations, is_synthetic, status

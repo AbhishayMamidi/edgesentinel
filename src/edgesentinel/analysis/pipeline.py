@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import threading
 import time
 from typing import List, Optional
 
@@ -93,6 +94,7 @@ class EventPipeline:
         ]
 
         # Batch write staging
+        self._lock = threading.Lock()
         self._pending_events: List[NetworkEvent] = []
         self._pending_flows: dict[str, FlowRecord] = {}
         self._pending_devices: dict[str, Device] = {}
@@ -102,45 +104,46 @@ class EventPipeline:
 
     def ingest_event(self, event: NetworkEvent) -> Optional[Alert]:
         """Process a single event through all pipeline stages synchronously."""
-        self.total_processed += 1
+        with self._lock:
+            self.total_processed += 1
 
-        # 1. Update flow tracker
-        flow = self.flow_tracker.process_event(event)
-        if flow:
-            self._pending_flows[flow.flow_id] = flow
+            # 1. Update flow tracker
+            flow = self.flow_tracker.process_event(event)
+            if flow:
+                self._pending_flows[flow.flow_id] = flow
 
-        # 2. Update device inventory
-        device, is_new = self.inventory.observe_event(event)
-        if device:
-            self._pending_devices[device.ip] = device
-            if is_new:
-                new_dev_alert = self.new_device_detector.process_new_device(
-                    device, is_synthetic=event.is_synthetic
-                )
-                if new_dev_alert and self.alert_manager.dispatch(new_dev_alert):
-                    self.total_alerts += 1
+            # 2. Update device inventory
+            device, is_new = self.inventory.observe_event(event)
+            if device:
+                self._pending_devices[device.ip] = device
+                if is_new:
+                    new_dev_alert = self.new_device_detector.process_new_device(
+                        device, is_synthetic=event.is_synthetic
+                    )
+                    if new_dev_alert and self.alert_manager.dispatch(new_dev_alert):
+                        self.total_alerts += 1
 
-        # 3. Run rule-based detectors
-        triggered_alert: Optional[Alert] = None
-        for detector in self.detectors:
-            alert = detector.process_event(event)
-            if alert:
-                if self.alert_manager.dispatch(alert):
-                    self.total_alerts += 1
-                    triggered_alert = alert
+            # 3. Run rule-based detectors
+            triggered_alert: Optional[Alert] = None
+            for detector in self.detectors:
+                alert = detector.process_event(event)
+                if alert:
+                    if self.alert_manager.dispatch(alert):
+                        self.total_alerts += 1
+                        triggered_alert = alert
 
-        # 4. Stage event for database persistence
-        self._pending_events.append(event)
+            # 4. Stage event for database persistence
+            self._pending_events.append(event)
 
-        # 5. Flush if batch limit reached or time elapsed
-        now = time.time()
-        if (
-            len(self._pending_events) >= self.config.storage.batch_size
-            or (now - self._last_flush_time) >= self.config.storage.flush_interval_seconds
-        ):
-            self.flush()
+            # 5. Flush if batch limit reached or time elapsed
+            now = time.time()
+            if (
+                len(self._pending_events) >= self.config.storage.batch_size
+                or (now - self._last_flush_time) >= self.config.storage.flush_interval_seconds
+            ):
+                self._flush_internal()
 
-        return triggered_alert
+            return triggered_alert
 
     def ingest_events(self, events: List[NetworkEvent]) -> List[Alert]:
         """Batch ingestion for simulations and PCAP replay."""
@@ -154,9 +157,15 @@ class EventPipeline:
 
     def flush(self) -> None:
         """Commit staged events, flows, and devices to database."""
+        with self._lock:
+            self._flush_internal()
+
+    def _flush_internal(self) -> None:
+        """Internal flush assuming caller holds self._lock."""
         if self._pending_events:
-            self.db.insert_events_batch(self._pending_events)
+            events_to_write = list(self._pending_events)
             self._pending_events.clear()
+            self.db.insert_events_batch(events_to_write)
 
         # Check for expired flows
         expired = self.flow_tracker.expire_stale_flows()
@@ -164,12 +173,14 @@ class EventPipeline:
             self._pending_flows[f.flow_id] = f
 
         if self._pending_flows:
-            self.db.upsert_flows_batch(list(self._pending_flows.values()))
+            flows_to_write = list(self._pending_flows.values())
             self._pending_flows.clear()
+            self.db.upsert_flows_batch(flows_to_write)
 
         if self._pending_devices:
-            self.db.upsert_devices_batch(list(self._pending_devices.values()))
+            devices_to_write = list(self._pending_devices.values())
             self._pending_devices.clear()
+            self.db.upsert_devices_batch(devices_to_write)
 
         self.alert_manager.flush()
         self._last_flush_time = time.time()

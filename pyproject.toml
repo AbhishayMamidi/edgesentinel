@@ -38,6 +38,9 @@ edgesentinel = "edgesentinel.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"edgesentinel.dashboard" = ["static/*"]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
