@@ -51,7 +51,14 @@ cp -r . "${INSTALL_DIR}/"
 echo "[5/7] Creating Python virtual environment..."
 python3 -m venv "${INSTALL_DIR}/.venv"
 "${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip
-"${INSTALL_DIR}/.venv/bin/pip" install -e "${INSTALL_DIR}"
+
+if compgen -G "${INSTALL_DIR}/dist/edgesentinel-*.whl" > /dev/null; then
+    echo "Installing EdgeSentinel from release wheel..."
+    "${INSTALL_DIR}/.venv/bin/pip" install "${INSTALL_DIR}"/dist/edgesentinel-*.whl
+else
+    echo "Installing EdgeSentinel from source..."
+    "${INSTALL_DIR}/.venv/bin/pip" install "${INSTALL_DIR}"
+fi
 
 # 6. Install configuration
 echo "[6/7] Deploying production configuration..."
@@ -69,12 +76,13 @@ if [[ -f "${CONFIG_DIR}/config.yaml" ]]; then
     chmod 640 "${CONFIG_DIR}/config.yaml"
 fi
 
-# 7. Install and start systemd service
+# 7. Install systemd service (boot enable held until post-deployment verification)
 echo "[7/7] Registering systemd service..."
 cp "${INSTALL_DIR}/deploy/edgesentinel.service" /etc/systemd/system/edgesentinel.service
 systemctl daemon-reload
-systemctl enable edgesentinel.service
+# Boot-enable is deferred until explicit user authorization per deployment security policy
 systemctl restart edgesentinel.service
+
 
 echo ""
 echo "[OK] EdgeSentinel successfully installed and started."

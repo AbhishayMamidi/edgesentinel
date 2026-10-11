@@ -29,6 +29,8 @@ class CaptureConfig(BaseModel):
     interface: str = ""
     bpf_filter: str = ""
     promiscuous: bool = False
+    snaplen: int = 128
+    mode: str = "pcap"  # pcap (binary streaming), text (legacy line parser)
 
     @field_validator("backend")
     @classmethod
@@ -42,6 +44,7 @@ class CaptureConfig(BaseModel):
 class MonitoringConfig(BaseModel):
     interval_seconds: float = 2.0
     max_queue_size: int = 5000
+    auto_start: bool = True
 
     @field_validator("max_queue_size")
     @classmethod
@@ -55,6 +58,7 @@ class DashboardConfig(BaseModel):
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8080
+    with_monitor: bool = True
 
     @field_validator("port")
     @classmethod

@@ -20,6 +20,8 @@ class BaseCaptureAdapter(ABC):
         self.is_running = False
         self.packets_captured = 0
         self.packets_dropped = 0
+        self.last_error: Optional[str] = None
+        self.pid: Optional[int] = None
 
     @abstractmethod
     def start(self) -> bool:
@@ -36,8 +38,12 @@ class BaseCaptureAdapter(ABC):
         """Stream normalized network events as they are received."""
         pass
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> Dict[str, Any]:
         return {
             "captured": self.packets_captured,
-            "dropped": self.packets_dropped
+            "dropped": self.packets_dropped,
+            "is_running": self.is_running,
+            "error": self.last_error,
+            "pid": self.pid,
         }
+

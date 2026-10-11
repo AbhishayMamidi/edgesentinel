@@ -23,16 +23,40 @@ class UpdateAlertRequest(BaseModel):
     status: AlertStatus
 
 
-def create_app(config: Optional[AppConfig] = None) -> FastAPI:
+def create_app(
+    config: Optional[AppConfig] = None,
+    with_monitor: Optional[bool] = None
+) -> FastAPI:
     cfg = config or load_config()
     db = Database(cfg.storage.database_path)
     pipeline = EventPipeline(config=cfg, db=db)
 
+    should_monitor = with_monitor if with_monitor is not None else cfg.dashboard.with_monitor
+    monitor_runner = None
+    if should_monitor:
+        from edgesentinel.monitoring.runner import MonitorRunner
+        monitor_runner = MonitorRunner(config=cfg, db=db, pipeline=pipeline)
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if monitor_runner:
+            monitor_runner.start(background=True)
+        try:
+            yield
+        finally:
+            if monitor_runner:
+                monitor_runner.stop()
+
     app = FastAPI(
         title="EdgeSentinel",
         description="Local-First Lightweight Network Security Monitoring & IDS",
-        version="0.1.0"
+        version="0.1.1",
+        lifespan=lifespan
     )
+
+
 
     # Restrict CORS to localhost
     app.add_middleware(
@@ -50,16 +74,25 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         plat = get_platform_info()
         stats = db.get_stats()
         metrics = pipeline.get_metrics()
+        capture_info = monitor_runner.get_status() if monitor_runner else {
+            "status": "disabled",
+            "is_running": False,
+            "backend": cfg.capture.backend,
+            "interface": cfg.capture.interface,
+            "error": None
+        }
         return {
             "platform": plat,
             "stats": stats,
             "metrics": metrics.model_dump(),
+            "capture": capture_info,
             "config": {
                 "environment": cfg.environment,
                 "capture_backend": cfg.capture.backend,
                 "response_mode": cfg.response.mode,
             }
         }
+
 
     @app.get("/api/alerts")
     def get_alerts(

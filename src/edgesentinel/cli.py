@@ -36,7 +36,6 @@ except Exception:
 
 
 def print_msg(msg: str, style: str = "") -> None:
-    # Strip or replace unicode characters that may break Windows consoles
     safe_msg = msg.encode("ascii", errors="replace").decode("ascii") if not HAS_RICH else msg
     if HAS_RICH and style:
         try:
@@ -48,10 +47,14 @@ def print_msg(msg: str, style: str = "") -> None:
 
 
 def cmd_status(args) -> int:
+    from edgesentinel.monitoring.runner import MonitorRunner
+
     config = load_config(args.config)
     db = Database(config.storage.database_path)
     plat = get_platform_info()
     stats = db.get_stats()
+    runner = MonitorRunner(config=config, db=db)
+    capture_stat = runner.get_status()
 
     print_msg("=== EdgeSentinel Status ===", "bold cyan")
     print(f"Operating System   : {plat['os']} {plat['release']} ({plat['architecture']})")
@@ -59,6 +62,9 @@ def cmd_status(args) -> int:
     print(f"Admin / Privileged : {'Yes' if plat['is_admin'] else 'No (Unprivileged)'}")
     print(f"System RAM         : {plat['available_ram_mb']} MB available / {plat['total_ram_mb']} MB total")
     print(f"Capture Backend    : {config.capture.backend}")
+    print(f"Capture Engine     : {capture_stat['status'].upper()}" + (f" (PID {capture_stat['pid']})" if capture_stat['pid'] else ""))
+    if capture_stat['error']:
+        print(f"Capture Error      : {capture_stat['error']}")
     print(f"Tcpdump Available  : {'Yes' if plat['has_tcpdump'] else 'No'}")
     print(f"Npcap Available    : {'Yes' if plat['has_npcap'] else 'No'}")
     print(f"Database Path      : {stats['db_path']} ({stats['db_size_kb']} KB)")
@@ -273,6 +279,49 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_monitor(args) -> int:
+    from edgesentinel.monitoring.runner import MonitorRunner
+
+    config = load_config(args.config)
+    if args.interface:
+        config.capture.interface = args.interface
+    if args.bpf:
+        config.capture.bpf_filter = args.bpf
+    if args.backend:
+        config.capture.backend = args.backend
+
+    print_msg("=== EdgeSentinel Live Monitoring Daemon ===", "bold cyan")
+    print(f"Capture Backend : {config.capture.backend}")
+    print(f"Interface       : {config.capture.interface or 'default/any'}")
+    if config.capture.bpf_filter:
+        print(f"BPF Filter      : {config.capture.bpf_filter}")
+    print(f"Database Path   : {config.storage.database_path}")
+
+    runner = MonitorRunner(config=config)
+
+    if args.duration:
+        print_msg(f"Running capture for {args.duration}s...", "yellow")
+        if not runner.start(background=True):
+            print_msg(f"[ERROR] {runner.last_error}", "bold red")
+            return 1
+        time.sleep(args.duration)
+        runner.stop()
+        stat = runner.get_status()
+        print_msg(
+            f"[OK] Completed {args.duration}s capture. "
+            f"Packets: {stat['packets_captured']}, Processed: {stat['events_processed']}, Alerts: {stat['alerts_generated']}.",
+            "bold green"
+        )
+        return 0
+
+    print_msg("Monitoring active. Press Ctrl+C to stop.", "dim")
+    if not runner.start(background=False):
+        print_msg(f"[ERROR] {runner.last_error}", "bold red")
+        return 1
+
+    return 0
+
+
 def cmd_dashboard(args) -> int:
     import uvicorn
     from edgesentinel.dashboard.app import create_app
@@ -280,15 +329,20 @@ def cmd_dashboard(args) -> int:
     config = load_config(args.config)
     port = args.port or config.dashboard.port
     host = args.host or config.dashboard.host
+    with_monitor = False if args.no_monitor else (True if args.monitor else None)
 
     print_msg(f"Starting EdgeSentinel Local Dashboard on http://{host}:{port}", "bold green")
     print_msg("Defensive local-first security: Strictly bound to localhost.", "dim")
-    app = create_app(config)
+    app = create_app(config, with_monitor=with_monitor)
     uvicorn.run(app, host=host, port=port, log_level="info")
     return 0
 
 
 def main() -> None:
+    # Subparser parent with SUPPRESS so subcommands don't overwrite parent's --config with None
+    sub_common = argparse.ArgumentParser(add_help=False)
+    sub_common.add_argument("--config", "-c", help="Path to config.yaml", default=argparse.SUPPRESS)
+
     parser = argparse.ArgumentParser(
         prog="edgesentinel",
         description="EdgeSentinel: Local-First Lightweight Network Security Monitoring Platform"
@@ -297,25 +351,25 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # status
-    subparsers.add_parser("status", help="Display application and host platform status")
+    subparsers.add_parser("status", help="Display application and host platform status", parents=[sub_common])
 
     # config-check
-    subparsers.add_parser("config-check", help="Validate configuration settings")
+    subparsers.add_parser("config-check", help="Validate configuration settings", parents=[sub_common])
 
     # alerts
-    alerts_p = subparsers.add_parser("alerts", help="Query recorded security alerts")
+    alerts_p = subparsers.add_parser("alerts", help="Query recorded security alerts", parents=[sub_common])
     alerts_p.add_argument("--limit", type=int, default=50, help="Maximum alerts to retrieve")
     alerts_p.add_argument("--severity", choices=["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"], help="Filter by severity")
 
     # devices
-    subparsers.add_parser("devices", help="List observed network devices")
+    subparsers.add_parser("devices", help="List observed network devices", parents=[sub_common])
 
     # events
-    events_p = subparsers.add_parser("events", help="List recent network traffic events")
+    events_p = subparsers.add_parser("events", help="List recent network traffic events", parents=[sub_common])
     events_p.add_argument("--limit", type=int, default=50, help="Maximum events to retrieve")
 
     # simulate
-    sim_p = subparsers.add_parser("simulate", help="Inject deterministic synthetic traffic scenario")
+    sim_p = subparsers.add_parser("simulate", help="Inject deterministic synthetic traffic scenario", parents=[sub_common])
     sim_p.add_argument(
         "scenario",
         choices=["port-scan", "syn-flood", "ssh-failures", "dns-burst", "arp-conflict", "traffic-spike", "new-device", "normal-traffic"],
@@ -324,17 +378,27 @@ def main() -> None:
     sim_p.add_argument("--multiplier", type=int, default=1, help="Scale factor for event count")
 
     # db-check
-    subparsers.add_parser("db-check", help="Verify SQLite database integrity")
+    subparsers.add_parser("db-check", help="Verify SQLite database integrity", parents=[sub_common])
 
     # replay
-    replay_p = subparsers.add_parser("replay", help="Replay packet events from an offline PCAP capture")
+    replay_p = subparsers.add_parser("replay", help="Replay packet events from an offline PCAP capture", parents=[sub_common])
     replay_p.add_argument("pcap_file", help="Path to PCAP file")
     replay_p.add_argument("--max-packets", type=int, default=None, help="Stop after N packets")
 
+    # monitor
+    mon_p = subparsers.add_parser("monitor", help="Run continuous live packet capture and detection daemon", parents=[sub_common])
+    mon_p.add_argument("--interface", "-i", help="Capture interface (e.g. eth0, wlan0)")
+    mon_p.add_argument("--bpf", help="BPF capture filter expression")
+    mon_p.add_argument("--backend", choices=["linux", "windows", "simulation", "pcap"], help="Override capture backend")
+    mon_p.add_argument("--duration", type=float, help="Run for N seconds then exit cleanly")
+
     # dashboard
-    dash_p = subparsers.add_parser("dashboard", help="Launch local web monitoring dashboard")
+    dash_p = subparsers.add_parser("dashboard", help="Launch local web monitoring dashboard", parents=[sub_common])
     dash_p.add_argument("--port", type=int, default=None, help="Dashboard port")
     dash_p.add_argument("--host", default=None, help="Dashboard host")
+    dash_p.add_argument("--monitor", action="store_true", help="Ensure background capture monitor is active")
+    dash_p.add_argument("--no-monitor", action="store_true", help="Run dashboard in web-only mode without background capture")
+
 
     args = parser.parse_args()
 
@@ -351,6 +415,7 @@ def main() -> None:
         "simulate": cmd_simulate,
         "replay": cmd_replay,
         "db-check": cmd_db_check,
+        "monitor": cmd_monitor,
         "dashboard": cmd_dashboard,
     }
 

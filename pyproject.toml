@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "edgesentinel"
-version = "0.1.0"
+version = "0.1.1"
+
 description = "Lightweight, local-first network security monitoring and intrusion detection platform (Windows 11 -> Raspberry Pi 3B+)"
 readme = "README.md"
 requires-python = ">=3.10"

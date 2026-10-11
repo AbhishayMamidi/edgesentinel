@@ -36,6 +36,26 @@ def parse_ethernet_frame(data: bytes, capture_source: str = "pcap") -> Optional[
     return None
 
 
+def parse_sll_frame(data: bytes, capture_source: str = "pcap") -> Optional[NetworkEvent]:
+    """Parse Linux Cooked Capture (SLL) frame bytes into a normalized NetworkEvent."""
+    if len(data) < 16:
+        return None
+
+    packet_type, arphrd, addr_len, addr_bytes, eth_type = struct.unpack("!HHH8sH", data[:16])
+    src_mac = ""
+    if 0 < addr_len <= 8:
+        src_mac = ":".join(f"{b:02x}" for b in addr_bytes[:addr_len]).upper()
+
+    payload = data[16:]
+    if eth_type == 0x0800:
+        return _parse_ipv4(payload, src_mac, "", capture_source, len(data))
+    elif eth_type == 0x0806:
+        return _parse_arp(payload, capture_source, len(data))
+
+    return None
+
+
+
 def _parse_ipv4(data: bytes, src_mac: str, dst_mac: str, capture_source: str, frame_len: int) -> Optional[NetworkEvent]:
     if len(data) < 20:
         return None
