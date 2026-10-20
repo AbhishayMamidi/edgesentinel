@@ -10,7 +10,7 @@ Group=edgesentinel
 WorkingDirectory=/opt/edgesentinel
 Environment="PYTHONUNBUFFERED=1"
 Environment="PATH=/opt/edgesentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-ExecStart=/opt/edgesentinel/.venv/bin/edgesentinel dashboard --port 8080 --config /etc/edgesentinel/config.yaml
+ExecStart=/opt/edgesentinel/.venv/bin/edgesentinel --config /etc/edgesentinel/config.yaml dashboard --port 8080 --host 127.0.0.1
 
 Restart=always
 RestartSec=5s
