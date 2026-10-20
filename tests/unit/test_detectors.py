@@ -74,6 +74,28 @@ def test_syn_flood_detector():
     assert alerts[0].severity == Severity.HIGH
 
 
+def test_syn_flood_benign_burst_no_false_positive():
+    """Verify that a standard 5-packet burst within a fraction of a second does not trigger a false flood alert."""
+    detector = SynAnomalyDetector(threshold_syn_rate=25.0, window_seconds=5.0)
+    now = time.time()
+    # 5 SYN packets within 50ms (typical for rapid page load parallel requests)
+    events = [
+        NetworkEvent(
+            timestamp=now + (i * 0.01),
+            src_ip="192.168.88.1",
+            dst_ip="192.168.88.11",
+            src_port=50000 + i,
+            dst_port=443,
+            protocol="TCP",
+            tcp_flags="SYN",
+            is_synthetic=True
+        )
+        for i in range(5)
+    ]
+    alerts = collect_alerts(detector, events)
+    assert len(alerts) == 0
+
+
 def test_ssh_bruteforce_detector():
     detector = SshBruteforceDetector(threshold_attempts=5, window_seconds=30.0)
     gen = SyntheticTrafficGenerator(seed=123)

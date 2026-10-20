@@ -121,6 +121,32 @@ def test_database_crud_and_retention():
         assert len(db.get_events(limit=10)) == 2
 
 
+def test_cli_db_check_with_cleanup():
+    from unittest.mock import MagicMock
+    from edgesentinel.cli import cmd_db_check
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_file = os.path.join(tmpdir, "test_cli.db")
+        cfg_file = os.path.join(tmpdir, "config.yaml")
+        with open(cfg_file, "w", encoding="utf-8") as f:
+            f.write(f"storage:\n  database_path: \"{db_file.replace(chr(92), '/')}\"\n  retention_days: 7\n")
+
+        db = Database(db_file)
+        old_event = NetworkEvent(
+            timestamp=time.time() - (10 * 86400),
+            src_ip="10.0.0.9", dst_ip="10.0.0.2", is_synthetic=True
+        )
+        db.insert_event(old_event)
+
+        args = MagicMock()
+        args.config = cfg_file
+        args.cleanup = True
+
+        ret = cmd_db_check(args)
+        assert ret == 0
+        assert len(db.get_events(limit=10)) == 0
+
+
 def test_resource_monitor():
     monitor = ResourceMonitor()
     metrics = monitor.get_metrics(queue_size=5, events_processed=100)

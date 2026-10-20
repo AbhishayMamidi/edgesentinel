@@ -1,163 +1,134 @@
-# EdgeSentinel — Raspberry Pi 3B+ Deployment Runbook
+# EdgeSentinel — Raspberry Pi 3B+ Deployment Runbook & Verification
 
-> [!IMPORTANT]
-> **Laptop-First Isolation Reminder**:
-> During development, the Raspberry Pi remains powered off and uncontacted.
-> This runbook is prepared for the operator to execute **once the physical Raspberry Pi is powered on and authorized for deployment**.
+## 1. Verified Hardware & Deployment Profile
 
----
-
-## 1. Target Hardware & Environment Profile
-
-| Parameter | Specification | Notes |
+| Parameter | Specification | Current Verified Deployment Value |
 | :--- | :--- | :--- |
 | **Target Device** | Raspberry Pi 3B+ | Headless operational mode |
-| **CPU Architecture** | ARMv8 (64-bit `aarch64` / `arm64`) | Compatible with standard Debian ARM64 |
-| **System Memory** | 1.0 GB LPDDR2 SDRAM | Shared with GPU (allocate min 16MB to GPU) |
-| **Operating System** | Raspberry Pi OS Lite (64-bit Bookworm) | No GUI / desktop packages |
-| **Network Interfaces**| `eth0` (Primary wired) / `wlan0` (Wi-Fi) | 100/1000 Mbps Ethernet over USB 2.0 |
-| **Remote Access** | SSH key-only, optional Tailscale mesh | Local dashboard bound to 127.0.0.1 |
-| **Capture Backend** | `tcpdump` streaming via subprocess | Unprivileged with `CAP_NET_RAW` |
+| **CPU Architecture** | ARMv8 (64-bit `aarch64`) | `Linux 6.18.50+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1` |
+| **System Memory** | 1.0 GB LPDDR2 SDRAM | 905 MiB total, ~665 MiB free/available |
+| **Operating System** | Debian 13 (Trixie / Bookworm-compatible) | Clean standard minimal install |
+| **Network Interface**| Wi-Fi `wlan0` | Active IP: **`192.168.88.11`** (MAC: `B8:27:EB:BA:4D:22`) |
+| **Historical IP Note**| DHCP lease history | `192.168.88.10` resolved as earlier lease for identical MAC |
+| **Remote Access** | SSH key authentication | User `abhi@192.168.88.11` |
+| **Capture Backend** | `tcpdump` streaming via subprocess | `tcpdump -U -w - -i wlan0 -s 128 -p` (unprivileged with `CAP_NET_RAW`) |
+| **Service Status** | systemd daemon | `active (running)`, boot-enabled (`multi-user.target.wants`) |
+| **Dashboard Bind** | Localhost only | Strictly bound to `127.0.0.1:8080` (CORS restricted) |
 
 ---
 
-## 2. Pre-Flight Verification on Raspberry Pi
+## 2. Directory Layout & File Permissions
 
-Once you power on the Raspberry Pi and connect via SSH, run this pre-flight verification block:
-
-```bash
-# Verify OS and Architecture
-uname -m
-# Expected: aarch64 (or armv7l on 32-bit OS)
-
-# Check operating system release
-cat /etc/os-release | grep -E "(PRETTY_NAME|VERSION_ID)"
-
-# Verify available RAM and swap
-free -h
-# Expected: ~900MB total available memory, at least 100MB swap
-
-# Verify root storage availability
-df -h /
-# Minimum requirement: >= 2.0 GB free disk space
-
-# Check Python 3 availability
-python3 --version
-# Minimum requirement: Python 3.10+
 ```
+/opt/edgesentinel/                 drwxr-xr-x  edgesentinel:edgesentinel
+├── .venv/                         drwxr-xr-x  edgesentinel:edgesentinel  (Python 3.13 venv)
+├── deploy/edgesentinel.service    -rw-r--r--  edgesentinel:edgesentinel
+└── src/edgesentinel/              drwxr-xr-x  edgesentinel:edgesentinel
 
----
+/etc/edgesentinel/                 drwxr-x---  edgesentinel:edgesentinel  (chmod 0750)
+└── config.yaml                    -rw-r-----  edgesentinel:edgesentinel  (chmod 0640)
 
-## 3. Deployment Artifact Transfer
+/var/lib/edgesentinel/             drwxr-x---  edgesentinel:edgesentinel  (chmod 0750)
+├── edgesentinel.db                -rw-r-----  edgesentinel:edgesentinel  (chmod 0640)
+├── monitor.pid                    -rw-r--r--  edgesentinel:edgesentinel
+└── backups/                       drwxr-x---  edgesentinel:edgesentinel  (chmod 0750)
+    └── edgesentinel_*.db          -rw-r-----  edgesentinel:edgesentinel  (chmod 0640)
 
-Deploy using the verified release archive `edgesentinel-0.1.0-rc1.tar.gz` and checksum file `SHA256SUMS.txt`.
-
-### On the Development Laptop (Windows Terminal / PowerShell):
-```powershell
-# Set your target Pi hostname or IP
-$PI_HOST = "pi@raspberrypi.local"   # or Tailscale IP
-
-# Transfer release bundle to target temporary staging
-scp dist/edgesentinel-0.1.0-rc1.tar.gz dist/SHA256SUMS.txt ${PI_HOST}:/tmp/
+/etc/systemd/system/
+└── edgesentinel.service           -rw-r--r--  root:root                  (chmod 0644)
 ```
 
 ---
 
-## 4. Installation Procedure on Raspberry Pi
+## 3. Verified Systemd Service Configuration
 
-### Step 1: Verify Checksum and Extract
-```bash
-cd /tmp
+File: `/etc/systemd/system/edgesentinel.service`
+```ini
+[Unit]
+Description=EdgeSentinel - Local-First Network Security Monitoring & IDS
+After=network.target network-online.target
+Wants=network-online.target
 
-# Verify SHA256 integrity
-sha256sum -c SHA256SUMS.txt --ignore-missing
-# Expected output: edgesentinel-0.1.0-rc1.tar.gz: OK
+[Service]
+Type=simple
+User=edgesentinel
+Group=edgesentinel
+WorkingDirectory=/opt/edgesentinel
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/opt/edgesentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+ExecStart=/opt/edgesentinel/.venv/bin/edgesentinel --config /etc/edgesentinel/config.yaml dashboard --port 8080 --host 127.0.0.1
 
-# Unpack archive
-tar -xzf edgesentinel-0.1.0-rc1.tar.gz
-cd edgesentinel-0.1.0-rc1
+Restart=always
+RestartSec=5s
+
+# 1GB RAM Target Budget Protections (Raspberry Pi 3B+)
+MemoryHigh=300M
+MemoryMax=350M
+CPUQuota=60%
+
+# Security Hardening & Principle of Least Privilege
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
 ```
-
-### Step 2: Execute Automated Installer
-```bash
-sudo bash scripts/install_linux.sh
-```
-
-The script automatically executes the following actions:
-1. Installs minimal system packages: `python3`, `python3-venv`, `python3-pip`, `tcpdump`, `libcap2-bin`.
-2. Configures `setcap cap_net_raw,cap_net_admin=eip` on `/usr/bin/tcpdump`.
-3. Creates the unprivileged system user and group `edgesentinel`.
-4. Installs the application into `/opt/edgesentinel` and creates a dedicated virtual environment in `/opt/edgesentinel/.venv`.
-5. Deploys production configuration to `/etc/edgesentinel/config.yaml` with data stored in `/var/lib/edgesentinel/edgesentinel.db`.
-6. Sets strict file permissions (`chmod 750 /var/lib/edgesentinel`, `chmod 640 /etc/edgesentinel/config.yaml`).
-7. Installs `/etc/systemd/system/edgesentinel.service` with strict resource quotas (`MemoryMax=350M`, `CPUQuota=60%`).
-8. Enables and starts the service.
 
 ---
 
-## 5. Post-Deployment Verification
+## 4. Operational Health & Status Verification
 
-Execute these verification commands on the Pi to validate health:
-
-### 1. Check Service Status
+### 1. Verify Service State
 ```bash
-sudo systemctl status edgesentinel.service
+sudo systemctl status edgesentinel.service --no-pager
+# Output: Active: active (running)
+# Output: Loaded: ... (enabled; preset: enabled)
 ```
-*Expected*: `Active: active (running)` with memory footprint under 80 MB.
 
-### 2. Verify Live Journal Logs
+### 2. Verify Live Capture Subprocess
 ```bash
-sudo journalctl -u edgesentinel.service -n 50 --no-pager
+ps aux | grep -E "(edgesentinel|tcpdump)" | grep -v grep
+# Expected: Main python process (PID ~2701) and tcpdump child process (PID ~2703)
 ```
-*Expected*: Clean startup log indicating database initialized at `/var/lib/edgesentinel/edgesentinel.db` and dashboard listening on `http://127.0.0.1:8080`.
 
-### 3. Test Local API
+### 3. Verify SQLite Integrity and Event Ingestion
+```bash
+sudo -u edgesentinel /opt/edgesentinel/.venv/bin/edgesentinel --config /etc/edgesentinel/config.yaml db-check
+# Expected output:
+# === SQLite Database Check ===
+# Integrity Check: ok
+# Database File  : /var/lib/edgesentinel/edgesentinel.db
+# File Size      : ~17 MB
+# Events Stored  : >50,000
+```
+
+### 4. Query Real-Time Diagnostics API
 ```bash
 curl -s http://127.0.0.1:8080/api/status | python3 -m json.tool
 ```
-*Expected*: JSON response returning platform info, metrics, and event stats.
-
-### 4. Run CLI Health & Database Checks
-```bash
-sudo -u edgesentinel /opt/edgesentinel/.venv/bin/edgesentinel status --config /etc/edgesentinel/config.yaml
-sudo -u edgesentinel /opt/edgesentinel/.venv/bin/edgesentinel db-check --config /etc/edgesentinel/config.yaml
-```
-*Expected*: `Integrity Check: ok`.
 
 ---
 
-## 6. Accessing the Dashboard via Tailscale / Remote Port Forwarding
+## 5. Dashboard Remote Access from Windows 11
 
-By default, EdgeSentinel binds strictly to `127.0.0.1` for defensive zero-exposure security.
+Because EdgeSentinel binds exclusively to loopback `127.0.0.1` for defensive zero-exposure security, remote access is achieved via encrypted SSH local port forwarding.
 
-### Option A: SSH Local Port Forwarding (Recommended for quick checks)
-From your Windows laptop:
+### Step 1: Open Persistent SSH Tunnel
+In a Windows PowerShell window:
 ```powershell
-ssh -L 8080:127.0.0.1:8080 pi@raspberrypi.local
-```
-Then open `http://127.0.0.1:8080` in your Windows browser.
-
-### Option B: Tailscale Private Access
-If Tailscale is installed on the Pi:
-1. In `/etc/edgesentinel/config.yaml`, update `dashboard.host` to your Pi's Tailscale 100.x.y.z IP.
-2. Restart the service:
-```bash
-sudo systemctl restart edgesentinel.service
-```
-3. Access `http://<tailscale-ip>:8080` securely from any authenticated device on your Tailscale tailnet.
-
----
-
-## 7. Emergency Rollback and Uninstallation
-
-If you ever need to remove EdgeSentinel cleanly:
-
-```bash
-sudo bash /opt/edgesentinel/scripts/uninstall_linux.sh
+ssh -N -L 8080:127.0.0.1:8080 -o ExitOnForwardFailure=yes abhi@192.168.88.11
 ```
 
-To purge all historic logs and database files as well:
-```bash
-sudo rm -rf /var/lib/edgesentinel /etc/edgesentinel /var/log/edgesentinel
-sudo userdel edgesentinel || true
-```
+### Step 2: Access Dashboard in Browser
+Open: [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+### Step 3: Available REST Endpoints
+- Dashboard UI: `GET http://127.0.0.1:8080/`
+- Platform & System Health: `GET http://127.0.0.1:8080/api/status`
+- Persisted Security Alerts: `GET http://127.0.0.1:8080/api/alerts?limit=50`
+- Network Device Inventory: `GET http://127.0.0.1:8080/api/devices`
+- Live Traffic Events: `GET http://127.0.0.1:8080/api/events?limit=50`

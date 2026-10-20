@@ -51,12 +51,16 @@ class SynAnomalyDetector(BaseDetector):
 
         count = len(self._syn_history[src_ip])
         earliest = min(self._syn_history[src_ip])
-        duration = max(now - earliest, 0.1)
+        # Use a minimum duration baseline of 1.0 second to avoid microsecond rate skew on small bursts
+        duration = max(now - earliest, 1.0)
         rate = count / duration if duration < self.window_seconds else count / self.window_seconds
+        min_flood_count = max(10, int(self.threshold_syn_rate * 0.5))
 
-        if count >= 5 and rate >= self.threshold_syn_rate:
+        if count >= min_flood_count and rate >= self.threshold_syn_rate:
             dedup_key = f"syn:{src_ip}"
-            if self.should_suppress_duplicate(dedup_key, window_seconds=self.window_seconds * 2, current_time=now):
+            # Suppress duplicate alerts for at least 60 seconds to avoid flooding the alert log
+            dedup_window = max(60.0, self.window_seconds * 6)
+            if self.should_suppress_duplicate(dedup_key, window_seconds=dedup_window, current_time=now):
                 return None
 
             return Alert(
@@ -66,8 +70,8 @@ class SynAnomalyDetector(BaseDetector):
                 dst_ip=event.dst_ip,
                 title="Elevated TCP SYN Rate (Possible SYN Flood Indicator)",
                 description=(
-                    f"Host {src_ip} generated {count} SYN packets ({rate:.1f} SYN/s) "
-                    f"over {self.window_seconds:.1f}s, exceeding threshold of {self.threshold_syn_rate:.1f} SYN/s."
+                    f"Host {src_ip} generated {count} TCP SYN packets ({rate:.1f} SYN/s "
+                    f"measured over {duration:.1f}s), exceeding threshold of {self.threshold_syn_rate:.1f} SYN/s."
                 ),
                 evidence={
                     "syn_count": count,

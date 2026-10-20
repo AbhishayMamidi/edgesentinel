@@ -241,6 +241,11 @@ def cmd_db_check(args) -> int:
     print(f"Events Stored  : {stats['total_events']}")
     print(f"Alerts Stored  : {stats['total_alerts']}")
     print(f"Devices Stored : {stats['total_devices']}")
+
+    if getattr(args, "cleanup", False):
+        purged = db.cleanup_retention(config.storage.retention_days)
+        print_msg(f"Retention Cleanup: Purged {purged} historical records older than {config.storage.retention_days} days.", "green")
+
     return 0 if res == "ok" else 1
 
 
@@ -378,7 +383,8 @@ def main() -> None:
     sim_p.add_argument("--multiplier", type=int, default=1, help="Scale factor for event count")
 
     # db-check
-    subparsers.add_parser("db-check", help="Verify SQLite database integrity", parents=[sub_common])
+    db_p = subparsers.add_parser("db-check", help="Verify SQLite database integrity", parents=[sub_common])
+    db_p.add_argument("--cleanup", action="store_true", help="Execute retention purge of records older than configured retention_days")
 
     # replay
     replay_p = subparsers.add_parser("replay", help="Replay packet events from an offline PCAP capture", parents=[sub_common])
